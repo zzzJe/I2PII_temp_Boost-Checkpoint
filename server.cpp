@@ -1,13 +1,3 @@
-//
-// chat_server.cpp
-// ~~~~~~~~~~~~~~~
-//
-// Copyright (c) 2003-2023 Christopher M. Kohlhoff (chris at kohlhoff dot com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-
 #include <algorithm>
 #include <cstdlib>
 #include <deque>
@@ -24,234 +14,244 @@ using boost::asio::ip::tcp;
 
 //----------------------------------------------------------------------
 
-typedef std::deque<chat_message> chat_message_queue;
+typedef std::deque<ChatMessage> chat_message_queue;
 
 //----------------------------------------------------------------------
 
-class chat_participant
-{
+class chat_participant {
 public:
-  virtual ~chat_participant() {}
-  virtual void deliver(const chat_message& msg) = 0;
+    virtual ~chat_participant() {}
+    virtual void deliver(const ChatMessage& msg) = 0;
 };
 
 typedef boost::shared_ptr<chat_participant> chat_participant_ptr;
 
 //----------------------------------------------------------------------
 
-class chat_room
-{
+class ChatRoom {
 public:
-  void join(chat_participant_ptr participant)
-  {
-    participants_.insert(participant);
-    std::for_each(recent_msgs_.begin(), recent_msgs_.end(),
-        boost::bind(&chat_participant::deliver,
-          participant, boost::placeholders::_1));
-  }
+    void join(chat_participant_ptr participant) {
+        participants_.insert(participant);
+    }
 
-  void leave(chat_participant_ptr participant)
-  {
-    participants_.erase(participant);
-  }
+    void leave(chat_participant_ptr participant) {
+        participants_.erase(participant);
+    }
 
-  void deliver(const chat_message& msg)
-  {
-    recent_msgs_.push_back(msg);
-    while (recent_msgs_.size() > max_recent_msgs)
-      recent_msgs_.pop_front();
-
-    std::for_each(participants_.begin(), participants_.end(),
-        boost::bind(&chat_participant::deliver,
-          boost::placeholders::_1, boost::ref(msg)));
-  }
+    void deliver(const ChatMessage& msg) {
+        std::for_each(
+            participants_.begin(),
+            participants_.end(),
+            boost::bind(
+                &chat_participant::deliver,
+                boost::placeholders::_1,
+                boost::ref(msg)
+            )
+        );
+    }
 
 private:
-  std::set<chat_participant_ptr> participants_;
-  enum { max_recent_msgs = 100 };
-  chat_message_queue recent_msgs_;
+    std::set<chat_participant_ptr> participants_;
 };
 
 //----------------------------------------------------------------------
 
-class chat_session
-  : public chat_participant,
-    public boost::enable_shared_from_this<chat_session>
+class ChatSession:
+    public chat_participant,
+    public boost::enable_shared_from_this<ChatSession>
 {
 public:
-  chat_session(boost::asio::io_context& io_context, chat_room& room)
-    : socket_(io_context),
-      room_(room)
-  {
-  }
+    ChatSession(boost::asio::io_context& io_context, ChatRoom& room):
+        socket_(io_context),
+        room_(room)
+    {}
 
-  tcp::socket& socket()
-  {
-    return socket_;
-  }
+    tcp::socket& socket() {
+        return socket_;
+    }
 
-  void start()
-  {
-    room_.join(shared_from_this());
-    // read_msg_ <- header => handle_read_header()
-    boost::asio::async_read(socket_,
-        boost::asio::buffer(read_msg_.data(), chat_message::header_length),
-        boost::bind(
-          &chat_session::handle_read_header, shared_from_this(),
-          boost::asio::placeholders::error));
-  }
+    void start() {
+        room_.join(shared_from_this());
+        // read_msg_ <- header => handle_read_header()
+        boost::asio::async_read(
+            socket_,
+            boost::asio::buffer(read_msg_.data(), ChatMessage::header_length),
+            boost::bind(
+                &ChatSession::handle_read_header, shared_from_this(),
+                boost::asio::placeholders::error
+            )
+        );
+    }
 
-  void deliver(const chat_message& msg)
-  {
-    bool write_in_progress = !write_msgs_.empty();
-    write_msgs_.push_back(msg);
-    if (!write_in_progress)
-    {
-      std::cout << "@session::deliver: #to_send_leng: " << write_msgs_.front().length() << std::endl;
-      std::cout << "@session::deliver: #to_send_data: |" << write_msgs_.front().data() << "|" << std::endl;
-      boost::asio::async_write(socket_,
-          boost::asio::buffer(write_msgs_.front().data(),
-            write_msgs_.front().length()),
-          boost::bind(&chat_session::handle_write, shared_from_this(),
-            boost::asio::placeholders::error));
+    void deliver(const ChatMessage& msg) {
+        bool write_in_progress = !write_msgs_.empty();
+        write_msgs_.push_back(msg);
+        if (!write_in_progress) {
+            std::cout << "@session::deliver: #to_send_leng: " << write_msgs_.front().length() << std::endl;
+            std::cout << "@session::deliver: #to_send_data: |" << write_msgs_.front().data() << "|" << std::endl;
+            boost::asio::async_write(
+                socket_,
+                boost::asio::buffer(
+                    write_msgs_.front().data(),
+                    write_msgs_.front().length()
+                ),
+                boost::bind(
+                    &ChatSession::handle_write,
+                    shared_from_this(),
+                    boost::asio::placeholders::error
+                )
+            );
+        }
     }
-  }
-  
-  void handle_write(const boost::system::error_code& error)
-  {
-    if (!error)
-    {
-      write_msgs_.pop_front();
-      if (!write_msgs_.empty())
-      {
-        boost::asio::async_write(socket_,
-            boost::asio::buffer(write_msgs_.front().data(),
-              write_msgs_.front().length()),
-            boost::bind(&chat_session::handle_write, shared_from_this(),
-              boost::asio::placeholders::error));
-      }
+    
+    void handle_write(const boost::system::error_code& error) {
+        if (!error) {
+            write_msgs_.pop_front();
+            if (!write_msgs_.empty()) {
+                boost::asio::async_write(
+                    socket_,
+                    boost::asio::buffer(
+                        write_msgs_.front().data(),
+                        write_msgs_.front().length()
+                    ),
+                    boost::bind(
+                        &ChatSession::handle_write,
+                        shared_from_this(),
+                        boost::asio::placeholders::error
+                    )
+                );
+            }
+        } else {
+            room_.leave(shared_from_this());
+        }
     }
-    else
-    {
-      room_.leave(shared_from_this());
-    }
-  }
 
-  void handle_read_header(const boost::system::error_code& error)
-  {
-    if (!error && read_msg_.decode_header())
-    {
-      std::cout << "@handle_read_header: #body_length: " << read_msg_.body_length() << std::endl;
-      // @here header is decoded
-      // read_msg_ <- body => handle_read_body()
-      boost::asio::async_read(socket_,
-          boost::asio::buffer(read_msg_.body(), read_msg_.body_length()),
-          boost::bind(&chat_session::handle_read_body, shared_from_this(),
-            boost::asio::placeholders::error));
+    void handle_read_header(const boost::system::error_code& error) {
+        if (!error && read_msg_.decode_header()) {
+            std::cout << "@handle_read_header: #body_length: " << read_msg_.body_length() << std::endl;
+            // @here header is decoded
+            // read_msg_ <- body => handle_read_body()
+            boost::asio::async_read(
+                socket_,
+                boost::asio::buffer(read_msg_.body(), read_msg_.body_length()),
+                boost::bind(
+                    &ChatSession::handle_read_body,
+                    shared_from_this(),
+                    boost::asio::placeholders::error
+                )
+            );
+        } else {
+            room_.leave(shared_from_this());
+        }
     }
-    else
-    {
-      room_.leave(shared_from_this());
-    }
-  }
 
-  void handle_read_body(const boost::system::error_code& error)
-  {
-    if (!error)
-    {
-      std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
-      // trying to send msg to everyone in room
-      room_.deliver(read_msg_);
-      // read_msg_ <- header // this is repeated pattern
-      boost::asio::async_read(socket_,
-          boost::asio::buffer(read_msg_.data(), chat_message::header_length),
-          boost::bind(&chat_session::handle_read_header, shared_from_this(),
-            boost::asio::placeholders::error));
+    void handle_read_body(const boost::system::error_code& error) {
+        if (!error) {
+            std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
+            // trying to send msg to everyone in room
+            room_.deliver(read_msg_);
+            // read_msg_ <- header // this is repeated pattern
+            boost::asio::async_read(
+                socket_,
+                boost::asio::buffer(read_msg_.data(), ChatMessage::header_length),
+                boost::bind(
+                    &ChatSession::handle_read_header,
+                    shared_from_this(),
+                    boost::asio::placeholders::error
+                )
+            );
+        } else {
+            room_.leave(shared_from_this());
+        }
     }
-    else
-    {
-      room_.leave(shared_from_this());
-    }
-  }
 
 private:
-  tcp::socket socket_;
-  chat_room& room_;
-  chat_message read_msg_;
-  chat_message_queue write_msgs_;
+    tcp::socket socket_;
+    ChatRoom& room_;
+    ChatMessage read_msg_;
+    chat_message_queue write_msgs_;
 };
 
-typedef boost::shared_ptr<chat_session> chat_session_ptr;
+typedef boost::shared_ptr<ChatSession> ChatSession_ptr;
 
 //----------------------------------------------------------------------
 
-class chat_server
-{
+class ChatServer {
 public:
-  chat_server(boost::asio::io_context& io_context,
-      const tcp::endpoint& endpoint)
-    : io_context_(io_context),
-      acceptor_(io_context, endpoint)
-  {
-    start_accept();
-  }
-
-  void start_accept()
-  {
-    chat_session_ptr new_session(new chat_session(io_context_, room_));
-    acceptor_.async_accept(new_session->socket(),
-        boost::bind(&chat_server::handle_accept, this, new_session,
-          boost::asio::placeholders::error));
-  }
-
-  void handle_accept(chat_session_ptr session,
-      const boost::system::error_code& error)
-  {
-    if (!error)
+    ChatServer(
+        boost::asio::io_context& io_context,
+        const tcp::endpoint& endpoint
+    ):
+        io_context_(io_context),
+        acceptor_(io_context, endpoint),
+        now_server_state(ServerState::Idle)
     {
-      session->start();
+        start_accept();
     }
 
-    start_accept();
-  }
+    void start_accept() {
+        ChatSession_ptr new_session(new ChatSession(io_context_, room_));
+        acceptor_.async_accept(
+            new_session->socket(),
+            boost::bind(
+                &ChatServer::handle_accept,
+                this,
+                new_session,
+                boost::asio::placeholders::error
+            )
+        );
+    }
+
+    void handle_accept(
+        ChatSession_ptr session,
+        const boost::system::error_code& error
+    ) {
+        if (!error && now_server_state == ServerState::Idle) {
+            session->start();
+        }
+
+        start_accept();
+    }
+
+    enum ServerState {
+        Busy,
+        Idle,
+        InGame,
+        GameDisplay
+    };
 
 private:
-  boost::asio::io_context& io_context_;
-  tcp::acceptor acceptor_;
-  chat_room room_;
+    ServerState now_server_state;
+    boost::asio::io_context& io_context_;
+    tcp::acceptor acceptor_;
+    ChatRoom room_;
 };
 
-typedef boost::shared_ptr<chat_server> chat_server_ptr;
+typedef boost::shared_ptr<ChatServer> chat_server_ptr;
 typedef std::list<chat_server_ptr> chat_server_list;
 
 //----------------------------------------------------------------------
 
-int main(int argc, char* argv[])
-{
-  try
-  {
-    if (argc < 2)
-    {
-      std::cerr << "Usage: chat_server <port> [<port> ...]\n";
-      return 1;
+int main(int argc, char* argv[]) {
+    try {
+        if (argc < 2) {
+            std::cerr << "Usage: ChatServer <port> [<port> ...]\n";
+            return 1;
+        }
+
+        boost::asio::io_context io_context;
+
+        chat_server_list servers;
+        for (int i = 1; i < argc; ++i) {
+            tcp::endpoint endpoint(tcp::v4(), atoi(argv[i]));
+            chat_server_ptr server(new ChatServer(io_context, endpoint));
+            servers.push_back(server);
+        }
+
+        io_context.run();
+    } catch (std::exception& e) {
+        std::cerr << "Exception: " << e.what() << "\n";
     }
 
-    boost::asio::io_context io_context;
-
-    chat_server_list servers;
-    for (int i = 1; i < argc; ++i)
-    {
-      tcp::endpoint endpoint(tcp::v4(), atoi(argv[i]));
-      chat_server_ptr server(new chat_server(io_context, endpoint));
-      servers.push_back(server);
-    }
-
-    io_context.run();
-  }
-  catch (std::exception& e)
-  {
-    std::cerr << "Exception: " << e.what() << "\n";
-  }
-
-  return 0;
+    return 0;
 }
