@@ -150,7 +150,11 @@ public:
             // std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
             // trying to send msg to everyone in room
             if (read_msg_.type() == EventType::ClientRegister) {
-                name_ = std::string(read_msg_.body());
+                // name_ = std::string(read_msg_.body());
+		name_ = "";
+		for(int i = 0; i < read_msg_.body_length(); i++){
+			name_ += read_msg_.body()[i];
+		}
                 id_ = 0;
                 std::string notification = name_;
                 ChatMessage msg(notification.c_str(), EventType::ServerLoginAnnounce);
@@ -188,7 +192,7 @@ private:
     ChatRoom& room_;
     ChatMessage read_msg_;
     chat_message_queue write_msgs_;
-    std::string name_;
+    std::string name_ = "dummy";
     int id_;
 };
 
