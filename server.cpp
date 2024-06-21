@@ -87,8 +87,8 @@ public:
         bool write_in_progress = !write_msgs_.empty();
         write_msgs_.push_back(msg);
         if (!write_in_progress) {
-            std::cout << "@session::deliver: #to_send_leng: " << write_msgs_.front().length() << std::endl;
-            std::cout << "@session::deliver: #to_send_data: |" << write_msgs_.front().data() << "|" << std::endl;
+            // std::cout << "@session::deliver: #to_send_leng: " << write_msgs_.front().length() << std::endl;
+            // std::cout << "@session::deliver: #to_send_data: |" << write_msgs_.front().data() << "|" << std::endl;
             boost::asio::async_write(
                 socket_,
                 boost::asio::buffer(
@@ -128,7 +128,7 @@ public:
 
     void handle_read_header(const boost::system::error_code& error) {
         if (!error && read_msg_.decode_header()) {
-            std::cout << "@handle_read_header: #body_length: " << read_msg_.body_length() << std::endl;
+            // std::cout << "@handle_read_header: #body_length: " << read_msg_.body_length() << std::endl;
             // @here header is decoded
             // read_msg_ <- body => handle_read_body()
             boost::asio::async_read(
@@ -147,9 +147,22 @@ public:
 
     void handle_read_body(const boost::system::error_code& error) {
         if (!error) {
-            std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
+            // std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
             // trying to send msg to everyone in room
-            room_.deliver(read_msg_);
+            if (read_msg_.type() == EventType::ClientRegister) {
+                name_ = std::string(read_msg_.body());
+                id_ = 0;
+                std::string notification = name_;
+                ChatMessage msg(notification.c_str(), EventType::ServerLoginAnnounce);
+                room_.deliver(msg);
+            } else {
+                std::string notification = name_ + "\n";
+                for (int i = 0; i < read_msg_.body_length(); i++) {
+                    notification += read_msg_.body()[i];
+                }
+                ChatMessage msg(notification.c_str(), EventType::Dummy);
+                room_.deliver(msg);
+            }
             // read_msg_ <- header // this is repeated pattern
             boost::asio::async_read(
                 socket_,
@@ -165,11 +178,18 @@ public:
         }
     }
 
+    void fill_user_info(char* name, int id) {
+        name_ = std::string(name);
+        id_ = id;
+    }
+
 private:
     tcp::socket socket_;
     ChatRoom& room_;
     ChatMessage read_msg_;
     chat_message_queue write_msgs_;
+    std::string name_;
+    int id_;
 };
 
 typedef boost::shared_ptr<ChatSession> ChatSession_ptr;
@@ -183,8 +203,7 @@ public:
         const tcp::endpoint& endpoint
     ):
         io_context_(io_context),
-        acceptor_(io_context, endpoint),
-        now_server_state(ServerState::Idle)
+        acceptor_(io_context, endpoint)
     {
         start_accept();
     }
@@ -206,22 +225,14 @@ public:
         ChatSession_ptr session,
         const boost::system::error_code& error
     ) {
-        if (!error && now_server_state == ServerState::Idle) {
+        if (!error) {
             session->start();
         }
 
         start_accept();
     }
 
-    enum ServerState {
-        Busy,
-        Idle,
-        InGame,
-        GameDisplay
-    };
-
 private:
-    ServerState now_server_state;
     boost::asio::io_context& io_context_;
     tcp::acceptor acceptor_;
     ChatRoom room_;

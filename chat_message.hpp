@@ -20,7 +20,7 @@ public:
         body_length_(0)
     {}
 
-    ChatMessage(char* msg_str, EventType type):
+    ChatMessage(const char* msg_str, EventType type):
         body_length_(strlen(msg_str)),
         type_(type)
     {
@@ -82,8 +82,12 @@ public:
         ostringstream oss;
         oss << setw(header_length_section) << right << body_length_;
         oss << setw(header_type_section)   << right << type_;
-        std::cout << "@encode_header: #encode_result: " << "[" << oss.str().c_str() << "]\n";
+        // std::cout << "@encode_header: #encode_result: " << "[" << oss.str().c_str() << "]\n";
         memcpy(data_, oss.str().c_str(), header_length);
+    }
+
+    EventType type() const {
+        return type_;
     }
 
 private:

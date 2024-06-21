@@ -4,13 +4,9 @@
 enum EventType {
     ClientConnect,
     ClientDisconnect,
-    ServerAccept,
-    ServerReject,
-    ClientReady,
-    ServerGameStart,
-    ClinetFinish,
-    ServerRoundTimeout,
-    ServerDisplay
+    ClientRegister,
+    ServerLoginAnnounce,
+    Dummy,
 };
 
 #endif // EVENT_TYPE_HPP
