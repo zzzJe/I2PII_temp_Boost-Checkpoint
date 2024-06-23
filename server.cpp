@@ -147,7 +147,8 @@ public:
 
     void handle_read_body(const boost::system::error_code& error) {
         if (!error) {
-            // std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
+            std::cout << "@handle_read_body: #body: " << read_msg_.body() << std::endl;
+	    std::cout << "@handle_read_body: #type: " << read_msg_.type() << std::endl;
             // trying to send msg to everyone in room
             if (read_msg_.type() == EventType::ClientRegister) {
                 // name_ = std::string(read_msg_.body());
@@ -159,7 +160,15 @@ public:
                 std::string notification = name_;
                 ChatMessage msg(notification.c_str(), EventType::ServerLoginAnnounce);
                 room_.deliver(msg);
-            } else {
+            } else if(read_msg_.type() == EventType::ClientSendMessage){
+		    std::string notification = this->name_ + "\n";
+		    for(int i=0; i< read_msg_.body_length(); i++){
+		    	notification += read_msg_.body()[i];
+		    }
+		ChatMessage msg(notification.c_str(), EventType::ServerMessageBoardcast);
+		room_.deliver(msg);
+	    }
+	    else {
                 std::string notification = name_ + "\n";
                 for (int i = 0; i < read_msg_.body_length(); i++) {
                     notification += read_msg_.body()[i];
@@ -185,6 +194,10 @@ public:
     void fill_user_info(char* name, int id) {
         name_ = std::string(name);
         id_ = id;
+    }
+
+    std::string get_name() const{
+    	return this->name_;
     }
 
 private:
